@@ -1,0 +1,13 @@
+[Unit]
+Description=Jabra Speak 510 hardware mute watcher
+After=graphical-session.target
+
+[Service]
+Type=simple
+EnvironmentFile=-%h/.config/jabra-speak510-mute/config.env
+ExecStart=@VENV_PYTHON@ -m jabra_speak510_mute
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target
