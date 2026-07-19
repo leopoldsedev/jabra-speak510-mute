@@ -3,8 +3,10 @@
 The Speak 510 only forwards HID button events while it believes a call is
 active, so this watcher writes an OffHook output report to gate the event
 stream open, then reads PhoneMute toggle pulses and mirrors the resulting
-state back to the MicMute LED so the LED always matches reality. See the
-README's "How it works" section for the report layout and discovery story.
+state back to the MicMute LED so the LED always matches reality. The device
+drops off-hook whenever it loses power (system suspend, USB autosuspend), so
+the report is re-asserted every OFFHOOK_REFRESH_SECONDS. See the README's
+"How it works" section for the report layout and discovery story.
 """
 
 from __future__ import annotations
@@ -23,6 +25,8 @@ REPORT_ID = 0x03
 INPUT_PHONE_MUTE_BIT = 1 << 4
 OUT_OFFHOOK_BIT = 1 << 0
 OUT_MIC_MUTE_LED_BIT = 1 << 5
+
+OFFHOOK_REFRESH_SECONDS = 30.0
 
 log = logging.getLogger(__name__)
 
@@ -91,7 +95,10 @@ class MuteWatcher:
 
         try:
             while True:
-                select.select([self._fd], [], [])
+                ready, _, _ = select.select([self._fd], [], [], OFFHOOK_REFRESH_SECONDS)
+                if not ready:
+                    self._write_output(off_hook=True, mic_mute_led=self._muted)
+                    continue
                 data = os.read(self._fd, 64)
                 if len(data) < 2 or data[0] != REPORT_ID:
                     log.debug("HID <- ignoring report %s", data.hex())
