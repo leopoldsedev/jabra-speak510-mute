@@ -97,6 +97,24 @@ sudo HA_URL=... HA_TOKEN=... HA_LIGHTS=... uv run python -m jabra_speak510_mute
 That's only useful for one-off testing — the systemd unit assumes the
 udev rule is in place.
 
+## Toggling from a keyboard shortcut
+
+`SIGUSR1` toggles mute exactly as pressing the hardware button does: the
+software state flips, the MicMute LED follows, and the Home Assistant
+callback fires. Bind this to a key in your desktop's shortcut settings:
+
+```sh
+systemctl --user kill -s SIGUSR1 jabra-speak510-mute.service
+```
+
+The daemon stays the single owner of the device, so the LED and the lights
+can't drift out of sync the way they would if a second process wrote its own
+HID reports.
+
+Toggle is the only verb. There is deliberately no explicit mute/unmute and no
+way to query state from outside — the LED is the readout, and the daemon is
+the source of truth.
+
 ## Configuration
 
 The unit reads `~/.config/jabra-speak510-mute/config.env`. Variables:

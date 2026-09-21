@@ -7,6 +7,9 @@ state back to the MicMute LED so the LED always matches reality. The device
 drops off-hook whenever it loses power (system suspend, USB autosuspend), so
 the report is re-asserted every OFFHOOK_REFRESH_SECONDS. See the README's
 "How it works" section for the report layout and discovery story.
+
+SIGUSR1 toggles mute exactly as a button press does, so a keyboard shortcut
+can drive the same state machine without a second process touching the device.
 """
 
 from __future__ import annotations
@@ -66,6 +69,18 @@ class MuteWatcher:
         log.debug("HID -> report %02x byte %02x", REPORT_ID, b)
         os.write(self._fd, bytes([REPORT_ID, b, 0x00]))
 
+    def toggle(self) -> None:
+        if self._fd is None:
+            log.debug("toggle ignored: device not open")
+            return
+        self._muted = not self._muted
+        self._write_output(off_hook=True, mic_mute_led=self._muted)
+        log.info("MUTED" if self._muted else "unmuted")
+        try:
+            self.on_change(self._muted)
+        except Exception:
+            log.exception("on_change callback raised")
+
     def run(self) -> None:
         dev = find_jabra_hidraw()
         if not dev:
@@ -89,6 +104,7 @@ class MuteWatcher:
 
         signal.signal(signal.SIGINT, shutdown)
         signal.signal(signal.SIGTERM, shutdown)
+        signal.signal(signal.SIGUSR1, lambda *_: self.toggle())
 
         self._write_output(off_hook=True, mic_mute_led=False)
         log.info("ready — listening for mute toggles")
@@ -108,13 +124,7 @@ class MuteWatcher:
                 # PhoneMute is declared relative in the descriptor, so a rising
                 # edge (0 -> 1) is one button press.
                 if mute_bit and not self._last_mute_bit:
-                    self._muted = not self._muted
-                    self._write_output(off_hook=True, mic_mute_led=self._muted)
-                    log.info("MUTED" if self._muted else "unmuted")
-                    try:
-                        self.on_change(self._muted)
-                    except Exception:
-                        log.exception("on_change callback raised")
+                    self.toggle()
                 self._last_mute_bit = mute_bit
         finally:
             if self._fd is not None:
