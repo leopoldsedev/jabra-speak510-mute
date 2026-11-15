@@ -29,6 +29,12 @@ def main() -> None:
             len(ha_lights),
             f", fallback {ha_fallback}" if ha_fallback else "",
         )
+        if ha_fallback:
+            try:
+                if not ha.fallback_exists():
+                    log.error("fallback automation %s does not exist in Home Assistant", ha_fallback)
+            except Exception as exc:
+                log.warning("could not verify fallback automation %s: %s", ha_fallback, exc)
     else:
         log.info("Home Assistant integration disabled (HA_URL, HA_TOKEN, HA_LIGHTS not set)")
 

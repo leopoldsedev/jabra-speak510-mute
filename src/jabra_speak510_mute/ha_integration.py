@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import logging
 import time
+import urllib.error
 import urllib.request
 from typing import Iterable
 
@@ -97,6 +98,17 @@ class HAMuteLight:
         xy = attrs.get("xy_color") or []
         return len(xy) == 2 and abs(xy[0]) < 1e-3 and abs(xy[1]) < 1e-3
 
+    def fallback_exists(self) -> bool:
+        if not self.fallback_automation:
+            return False
+        try:
+            self._request("GET", "/api/states/" + self.fallback_automation)
+        except urllib.error.HTTPError as exc:
+            if exc.code == 404:
+                return False
+            raise
+        return True
+
     def on_mute_change(self, muted: bool) -> None:
         if muted:
             for light in self.lights:
@@ -116,16 +128,26 @@ class HAMuteLight:
         if self.fallback_automation and any(
             self._looks_invalid(self._saved.get(l, {})) for l in self.lights
         ):
-            log.warning(
-                "snapshot looks invalid (HA cache stale); triggering %s instead of restore",
+            try:
+                exists = self.fallback_exists()
+            except Exception as exc:
+                log.warning("HA error looking up fallback %s: %s", self.fallback_automation, exc)
+                exists = True
+            if exists:
+                log.warning(
+                    "snapshot looks invalid (HA cache stale); triggering %s instead of restore",
+                    self.fallback_automation,
+                )
+                try:
+                    self._request("POST", "/api/services/automation/trigger", {"entity_id": self.fallback_automation})
+                except Exception as exc:
+                    log.warning("HA error triggering fallback %s: %s", self.fallback_automation, exc)
+                self._saved.clear()
+                return
+            log.error(
+                "fallback %s does not exist in Home Assistant; restoring snapshots instead",
                 self.fallback_automation,
             )
-            try:
-                self._request("POST", "/api/services/automation/trigger", {"entity_id": self.fallback_automation})
-            except Exception as exc:
-                log.warning("HA error triggering fallback %s: %s", self.fallback_automation, exc)
-            self._saved.clear()
-            return
 
         for light in self.lights:
             snap = self._saved.pop(light, None)
